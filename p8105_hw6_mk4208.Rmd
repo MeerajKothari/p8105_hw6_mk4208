@@ -9,4 +9,35 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Loading libraries
+
+```{r message=FALSE}
+library(tidyverse)
+library(modelr)
+library(mlbench)
+library(caret)
+```
+
+
+# Problem 1 
+
+```{r}
+birthweight = read_csv("./Data/birthweight.csv") %>% janitor::clean_names() %>% 
+  mutate(babysex = factor(babysex, c(1, 2), c("Male", "Female")),
+         frace = factor(frace, c(1:4, 8, 9), c("White", "Black", "Asian", "Puerto Rican", "Other", "Unkown")),
+         malform = factor(malform, c(0, 1), c("Absent", "Present")),
+         mrace = factor(mrace, c(1:4, 8), c("White", "Black", "Asian", "Puerto Rican", "Other")))
+```
+
+```{r}
+set.seed(10)
+
+control = trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+model = train(bwt~., data = birthweight, method = "glm", preProcess = "scale", trControl = control)
+
+importance = varImp(model, scale = FALSE)
+
+ggplot(importance)
+```
 
