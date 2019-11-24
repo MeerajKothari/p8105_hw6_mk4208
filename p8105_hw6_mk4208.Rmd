@@ -29,15 +29,43 @@ birthweight = read_csv("./Data/birthweight.csv") %>% janitor::clean_names() %>%
          mrace = factor(mrace, c(1:4, 8), c("White", "Black", "Asian", "Puerto Rican", "Other")))
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 set.seed(10)
+
+nums = map(birthweight, is.numeric) %>% unlist()
+
+correlationMatrix = birthweight %>% select_if(is.numeric) %>% cor()
+
+highlyCorrelated = correlationMatrix %>% findCorrelation(cutoff = 0.7)
+
+birthweight_no_corr = birthweight %>% select(-highlyCorrelated, "bwt")
 
 control = trainControl(method = "repeatedcv", number = 10, repeats = 3)
 
-model = train(bwt~., data = birthweight, method = "glm", preProcess = "scale", trControl = control)
+model = train(bwt~., data = birthweight_no_corr, method = "glm", preProcess = "scale", trControl = control)
 
 importance = varImp(model, scale = FALSE)
 
-ggplot(importance)
+ggplot(importance) + 
+  theme_minimal()
+```
+
+```{r}
+fit = lm(bwt ~ bhead + delwt + gaweeks + smoken + mrace + babysex, data = birthweight)
+```
+
+```{r}
+birthweight %>% 
+  modelr::add_residuals(fit) %>% 
+  modelr::add_predictions(fit) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point() + 
+  theme_minimal()
+```
+
+```{r}
+comparison_1 = lm(bwt ~ momage + gaweeks, data = birthweight)
+
+
 ```
 
