@@ -17,58 +17,77 @@ library(modelr)
 library(mlbench)
 library(caret)
 library(patchwork)
+library(viridis)
 ```
 
 
 # Problem 1 
 
-```{r}
+Following code chunk loads and cleaning the data for regression analysis and checks for missing data producing a summary.
+
+```{r message = FALSE}
 birthweight = read_csv("./Data/birthweight.csv") %>% janitor::clean_names() %>% 
   mutate(babysex = factor(babysex, c(1, 2), c("Male", "Female")),
          frace = factor(frace, c(1:4, 8, 9), c("White", "Black", "Asian", "Puerto Rican", "Other", "Unkown")),
          malform = factor(malform, c(0, 1), c("Absent", "Present")),
          mrace = factor(mrace, c(1:4, 8), c("White", "Black", "Asian", "Puerto Rican", "Other")))
+
+skimr::skim(birthweight)
 ```
 
-```{r message=FALSE, warning=FALSE}
-set.seed(10)
+The following code chunks use the `caret` package and the `mlbench` package to rank feature importance. 
 
-nums = map(birthweight, is.numeric) %>% unlist()
+* First, I do 10 repeats of 10-fold CV for the data and train a generalized linear model for the `bwt` variable. The `varImp` function ranks the importance based on the absolute value of the t-statistic for each model parameter used. 
 
-correlationMatrix = birthweight %>% select_if(is.numeric) %>% cor()
+```{r warning = FALSE}
+control = trainControl(method = "cv", number = 10, repeats = 10)
 
-highlyCorrelated = correlationMatrix %>% findCorrelation(cutoff = 0.7)
+model = train(bwt~., data = birthweight, method = "glm", preProcess = "scale", trControl = control)
 
-birthweight_no_corr = birthweight %>% select(-highlyCorrelated, "bwt")
+importance = varImp(model, scale = TRUE)
+```
 
-control = trainControl(method = "repeatedcv", number = 10, repeats = 3)
+* Second, I plot the imporance of each parameter.
 
-model = train(bwt~., data = birthweight_no_corr, method = "glm", preProcess = "scale", trControl = control)
-
-importance = varImp(model, scale = FALSE)
-
+```{r}
 ggplot(importance) + 
   theme_minimal()
 ```
 
+Based on the above produced plot, I select `bhead`, `blength`, `delwt`, `smoken`, `babysex`, `gaweeks` and `mrace` as my predictors and fit a linear model.  
+
 ```{r}
-fit = lm(bwt ~ bhead + delwt + gaweeks + smoken + mrace + babysex, data = birthweight)
+fit = lm(bwt ~ bhead + blength + delwt + smoken + gaweeks + babysex + mrace, data = birthweight)
 ```
+
+The following code chunk produces a plot of model residuals against fitted values using `add_predictions` and `add_residuals`. 
 
 ```{r}
 birthweight %>% 
   modelr::add_residuals(fit) %>% 
   modelr::add_predictions(fit) %>% 
-  ggplot(aes(x = pred, y = resid)) +
-  geom_point() + 
-  theme_minimal()
+  ggplot(aes(x = pred, y = resid, color = resid)) +
+  geom_point(alpha = 0.5) + 
+  scale_color_viridis() +
+  theme_minimal() +
+  theme(legend.position = "none")
 ```
+
+Following code chunks produces two comparision models: 
+
+* `comparison_1` uses length at birth and gestational age as predictors (main effects only)
+
+* `comparison_2` uses head circumference, length, sex, and all interactions (including the three-way interaction) between these. 
 
 ```{r}
 comparison_1 = lm(bwt ~ blength + gaweeks, data = birthweight)
 
 comparison_2 = lm(bwt ~ bhead + blength + babysex + bhead*blength + blength*babysex + babysex*bhead + bhead*blength*babysex, data = birthweight) 
+```
 
+Following code chunk compares the 3 models in terms of the cross-validated prediction error, using `crossv_mc`. 
+
+```{r}
 cv_df = 
   crossv_mc(birthweight, 100) %>% 
   mutate(
@@ -76,16 +95,13 @@ cv_df =
     test = map(test, as_tibble))
 
 cv_df = cv_df %>%
-  mutate(fit = map(train, ~lm(bwt ~ bhead + delwt + gaweeks + smoken + mrace + babysex, data = .x)),
+  mutate(fit = map(train, ~lm(bwt ~ bhead + blength + delwt + smoken + gaweeks + babysex + mrace, data = .x)),
          comparison_1 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
          comparison_2 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + blength*babysex + babysex*bhead + bhead*blength*babysex, data = .x))) %>% 
   mutate(rmse_fit = map2_dbl(fit, test, ~rmse(model = .x, data = .y)),
          rmse_comparison_1 = map2_dbl(comparison_1, test, ~rmse(model = .x, data = .y)),
          rmse_comparison_2 = map2_dbl(comparison_2, test, ~rmse(model = .x, data = .y)))
-```
 
-
-```{r}
 cv_df %>% 
   select(starts_with("rmse")) %>%
   pivot_longer(
@@ -94,13 +110,16 @@ cv_df %>%
     values_to = "rmse", 
     names_prefix = "rmse_") %>%
   mutate(model = fct_inorder(model)) %>%
-  ggplot(aes(x = model, y = rmse)) + 
-  geom_violin()
+  ggplot(aes(x = model, y = rmse, fill = model)) + 
+  geom_violin() + 
+  scale_fill_viridis_d(alpha = 0.5) + 
+  theme_minimal() + 
+  theme(legend.position = "none")
 ```
 
 # Problem 2
 
-```{r}
+```{r message = FALSE}
 weather_df = 
   rnoaa::meteo_pull_monitors(
     c("USW00094728"),
@@ -114,7 +133,7 @@ weather_df =
   select(name, id, everything())
 ```
 
-```{r}
+```{r message=FALSE}
 results = weather_df %>% 
   modelr::bootstrap(n = 5000) %>% 
   mutate(
@@ -129,7 +148,7 @@ results = weather_df %>%
     id_cols = .id, 
     ) %>%
   janitor::clean_names() %>%
-  unnest(c(glance_intercept, .names_repair)) %>% 
+  unnest(c(glance_intercept), .names_repair = "universal") %>% 
   mutate(
     log_b0_b1 = log(estimate_intercept * estimate_tmin)
   ) 
@@ -146,7 +165,7 @@ p2 = results %>%
   ggplot(aes(x = log_b0_b1)) + 
   geom_histogram() + 
   geom_density() +
-  theme_minimal()
+  theme_minimal() 
 
 p1 + p2
 ```
