@@ -178,7 +178,7 @@ p2 = results %>%
 p1 + p2
 ```
 
-Both the distributions apprear normally distributed. The mean of r² is `r results %>% pull(r.squared) %>% mean` and the median of r² is `r results %>% pull(r.squared) %>% median`.
+Both the distributions appear normally distributed. The mean of r² is `r results %>% pull(r.squared) %>% mean` and the median of r² is `r results %>% pull(r.squared) %>% median`.
 The mean of log(β0 * β1) is `r results %>% pull(log_b0_b1) %>% mean` and the median of log(β0 * β1) is `r results %>% pull(log_b0_b1) %>% median`. 
 
 -----------
